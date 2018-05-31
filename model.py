@@ -12,7 +12,7 @@ from data_loader import *
 from sklearn.model_selection import train_test_split
 from multiprocessing import Pool
 
-def extract_train_test(cars, notcars, params, rand_state = np.random.randint(0, 100), process_pool = None):
+def extract_features(cars, notcars, params, process_pool = None):
 
     color_space = params['color_space']
     spatial_size = params['spatial_size']
@@ -41,10 +41,7 @@ def extract_train_test(cars, notcars, params, rand_state = np.random.randint(0, 
     # Define the labels vector
     y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
 
-    # Split up data into randomized training and test sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state = rand_state)
-
-    return X_train, X_test, y_train, y_test, extraction_time
+    return X, y, extraction_time
 
 def scale(X_train, X_test):
      # Fit a per-column scaler
@@ -53,7 +50,7 @@ def scale(X_train, X_test):
     X_train = X_scaler.transform(X_train)
     X_test = X_scaler.transform(X_test)
 
-    return X_train, X_test
+    return X_train, X_test, X_scaler
 
 def train(X_train, y_train, rand_state):
   
@@ -92,31 +89,35 @@ def test(model, X_test, y_test, n_predict = 100):
 
     return test_accuracy, pred_time
 
-def train_and_test(cars, notcars, params, model_file = None, rand_state = None, process_pool = None):
+def train_and_test(cars, notcars, params, rand_state = None, process_pool = None):
 
-    X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
+    # Extract features
+    X, y, ext_time = extract_features(cars, notcars, params, process_pool = process_pool)
 
-    X_train, X_test = scale(X_train, X_test)
+    # Split up data into randomized training and test sets
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state = rand_state)
 
+    # Scale data
+    X_train, X_test, scaler = scale(X_train, X_test)
+
+    # Train the Linear SVC
     model, train_time = train(X_train, y_train, rand_state = rand_state)
 
+    # Test the predictions
     test_accuracy, pred_time = test(model, X_test, y_test)
 
-    if model_file is not None:
+    params['model'] = model
+    params['scaler'] = scaler
+    params['accuracy'] = test_accuracy
+    params['extraction_time'] = ext_time
+    params['train_time'] = train_time
+    params['pred_time'] = pred_time
 
-        params['accuracy'] = test_accuracy
-        params['extraction_time'] = extraction_time
-        params['train_time'] = train_time
-        params['pred_time'] = pred_time
+    return params
 
-        save_model(model, model_file=os.path.join('models', model_file))
-        save_model(params, model_file=os.path.join('models', model_file.split('.')[0] + '_params.p'))
+def parameters_search(cars, notcars, params_file = 'search_params.json', rand_state = None, process_pool = None):
 
-    return model, test_accuracy, extraction_time, train_time, pred_time
-
-def parameters_search(cars, notcars, file = 'search_params.json', rand_state = None, process_pool = None):
-
-    search_params = load_search_params(file = file)
+    search_params = load_search_params(file = params_file)
 
     max_acc = 0
     max_acc_params = None
@@ -124,7 +125,7 @@ def parameters_search(cars, notcars, file = 'search_params.json', rand_state = N
     print('Searching best parameters using space {}...'.format(search_params))
 
     t1 = time.time()
-    i = 0
+    experiments = 0
     
     for color_space in search_params['color_space']:
         for orient in search_params['orient']:
@@ -132,6 +133,8 @@ def parameters_search(cars, notcars, file = 'search_params.json', rand_state = N
                 for cell_per_block in search_params['cell_per_block']:
                     for spatial_size in search_params['spatial_size']:
                         for hist_bins in search_params['hist_bins']:
+
+                            experiments += 1
                             
                             params = {
                                 'color_space': color_space,
@@ -142,26 +145,19 @@ def parameters_search(cars, notcars, file = 'search_params.json', rand_state = N
                                 'hist_bins': hist_bins
                             }
 
-                            model, test_accuracy, extraction_time, train_time, pred_time = train_and_test(cars, notcars, params, rand_state=rand_state, process_pool=process_pool)
-
-                            i += 1
+                            model_params = train_and_test(cars, notcars, params, rand_state=rand_state, process_pool=process_pool)
                             
-                            if test_accuracy > max_acc:
-                                max_acc = test_accuracy
-                                params['accuracy'] = test_accuracy
-                                params['extraction_time'] = extraction_time
-                                params['train_time'] = train_time
-                                params['pred_time'] = pred_time
-                                max_acc_params = params
+                            if model_params['accuracy'] > max_acc:
+                                max_acc = model_params['accuracy']
+                                max_acc_params = model_params
 
     t2 = time.time()
 
-    print('Searching best params...DONE ({} s, {} combinations)'.format(round(t2 - t1, 2), i))
+    print('Searching best params...DONE ({} s, {} experiments)'.format(round(t2 - t1, 2), experiments))
     print('Accuracy: {}'.format(max_acc))
     print('Best Params: {}'.format(max_acc_params))
 
-    save_model(model, os.path.join('models', 'best_model.p'))
-    save_model(max_acc_params, os.path.join('models', 'best_model_params.p'))
+    return model_params
 
 def worker_init():
     """Ignore CTRL+C in the worker process."""
@@ -244,6 +240,8 @@ if __name__ == '__main__':
 
     try:
 
+        model_file = time.strftime('model-%Y%m%d-%H%M%S.p')
+
         if args.search is None:
             
             params = {
@@ -254,15 +252,13 @@ if __name__ == '__main__':
                 'spatial_size': args.spatial_size,      # Spatial binning dimensions
                 'hist_bins': args.hist_bins,            # Number of histogram bins
             }
-        
-            model_file = time.strftime('model-%Y%m%d-%H%M%S.p')
 
-            train_and_test(cars, notcars, params, model_file=model_file, rand_state=args.rand_state, process_pool=process_pool)
-            
+            model_params = train_and_test(cars, notcars, params, rand_state=args.rand_state, process_pool=process_pool)
         else:
+            model_params = parameters_search(cars, notcars, params_file=args.search, rand_state=args.rand_state, process_pool=process_pool)
+     
+        save_model(model_params, model_file=os.path.join('models', model_file))
 
-            parameters_search(cars, notcars, file = args.search, rand_state = args.rand_state, process_pool = process_pool)
-    
     except Exception:
         if process_pool is not None:
             process_pool.terminate()
