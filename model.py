@@ -3,6 +3,7 @@ import cv2
 import glob
 import time
 import argparse
+import signal
 
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
@@ -162,6 +163,10 @@ def parameters_search(cars, notcars, file = 'search_params.json', rand_state = N
     save_model(model, os.path.join('models', 'best_model.p'))
     save_model(max_acc_params, os.path.join('models', 'best_model_params.p'))
 
+def worker_init():
+    """Ignore CTRL+C in the worker process."""
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='SVC Training')
@@ -187,7 +192,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--spatial_size',
         type=int,
-        default=8,
+        default=16,
         help='Spatial binning dimension, can be None to disable'
     )
     parser.add_argument(
@@ -214,12 +219,15 @@ if __name__ == '__main__':
         default=2,
         help='Number of HOG cells per block'
     )
+    parser.add_argument(
+        '--search',
+        type=str,
+        default=None,
+        help='Performs a parameters search, the value is a json file with parameters space'
+    )
     
     parser.add_argument('--disable-parallel', dest='parallel', action='store_false', help='Disable parallel processing (may decrease feature extraction speed)')
     parser.set_defaults(parallel=True)
-
-    parser.add_argument('--search', action='store_true', help='If present performs a parameters search')
-    parser.set_defaults(search=False)
 
     args = parser.parse_args()
 
@@ -230,23 +238,31 @@ if __name__ == '__main__':
     if args.parallel is False or pool_size < 2:
         process_pool = None
     else:
-        process_pool = Pool(pool_size)
+        process_pool = Pool(pool_size, initializer = worker_init)
 
     print('Using {} cores'.format(1 if process_pool is None else pool_size))
 
-    if args.search:
-        parameters_search(cars, notcars, rand_state = args.rand_state, process_pool = process_pool)
-    else:
+    try:
 
-        params = {
-            'color_space': args.color_space,        # Color space
-            'orient': args.orient,                  # HOG orientations
-            'pix_per_cell': args.pix_per_cell,      # HOG pixels per cell
-            'cell_per_block': args.cell_per_block,  # HOG cells per block
-            'spatial_size': args.spatial_size,      # Spatial binning dimensions
-            'hist_bins': args.hist_bins,            # Number of histogram bins
-        }
+        if args.search is None:
+            
+            params = {
+                'color_space': args.color_space,        # Color space
+                'orient': args.orient,                  # HOG orientations
+                'pix_per_cell': args.pix_per_cell,      # HOG pixels per cell
+                'cell_per_block': args.cell_per_block,  # HOG cells per block
+                'spatial_size': args.spatial_size,      # Spatial binning dimensions
+                'hist_bins': args.hist_bins,            # Number of histogram bins
+            }
+        
+            model_file = time.strftime('model-%Y%m%d-%H%M%S.p')
+
+            train_and_test(cars, notcars, params, model_file=model_file, rand_state=args.rand_state, process_pool=process_pool)
+            
+        else:
+
+            parameters_search(cars, notcars, file = args.search, rand_state = args.rand_state, process_pool = process_pool)
     
-        model_file = time.strftime('model-%Y%m%d-%H%M%S.p')
-
-        train_and_test(cars, notcars, params, model_file=model_file, rand_state=args.rand_state, process_pool=process_pool)
+    except Exception:
+        if process_pool is not None:
+            process_pool.terminate()
