@@ -5,11 +5,12 @@ import time
 
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
-from feature_extractor import *
+from features_extractor import FeaturesExtractor
 from data_loader import *
 from sklearn.model_selection import train_test_split
+from multiprocessing import Pool
 
-def extract_train_test(cars, notcars, params, rand_state = np.random.randint(0, 100)):
+def extract_train_test(cars, notcars, params, rand_state = np.random.randint(0, 100), process_pool = None):
 
     color_space = params['color_space']
     spatial_size = params['spatial_size']
@@ -20,15 +21,15 @@ def extract_train_test(cars, notcars, params, rand_state = np.random.randint(0, 
 
     t1 = time.time()
 
-    car_features = extract_features(cars, color_space=color_space, 
-                            spatial_size=spatial_size, hist_bins=hist_bins, 
-                            orient=orient, pix_per_cell=pix_per_cell, 
-                            cell_per_block=cell_per_block)
+    fe = FeaturesExtractor(color_space=color_space, 
+                           spatial_size=spatial_size, 
+                           hist_bins=hist_bins,
+                           orient=orient,
+                           pix_per_cell=pix_per_cell,
+                           cell_per_block=cell_per_block)
 
-    notcar_features = extract_features(notcars, color_space=color_space, 
-                            spatial_size=spatial_size, hist_bins=hist_bins, 
-                            orient=orient, pix_per_cell=pix_per_cell, 
-                            cell_per_block=cell_per_block)
+    car_features = fe.extract_features(cars, process_pool=process_pool)
+    notcar_features = fe.extract_features(notcars, process_pool=process_pool)
 
     extraction_time = round(time.time() - t1, 2)
 
@@ -89,7 +90,7 @@ def test(model, X_test, y_test, n_predict = 100):
 
     return test_accuracy, pred_time
 
-def search_best(cars, notcars):
+def search_best(cars, notcars, process_pool = None):
 
     search_params = {
         'color_space': ['YUV', 'YCrCb'],
@@ -126,7 +127,7 @@ def search_best(cars, notcars):
                                 'hist_bins': hist_bins
                             }
 
-                            X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state=rand_state)
+                            X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
 
                             X_train, X_test = scale(X_train, X_test)
 
@@ -156,13 +157,19 @@ if __name__ == '__main__':
 
     cars, notcars = load_dataset()
 
-    #cars = cars[:100]
-    #notcars = notcars[:100]
+    pool_size = os.cpu_count()
 
-    search = True
+    if pool_size > 0:
+        process_pool = Pool(pool_size)
+    else:
+        process_pool = None
+
+    print('Using {} cores'.format(1 if process_pool is None else pool_size))
+
+    search = False
 
     if search:
-        search_best(cars, notcars)
+        search_best(cars, notcars, process_pool = process_pool)
     else:
 
         params = {
@@ -176,7 +183,7 @@ if __name__ == '__main__':
 
         rand_state = 42
 
-        X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state)
+        X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
 
         X_train, X_test = scale(X_train, X_test)
 
