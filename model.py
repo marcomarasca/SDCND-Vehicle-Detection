@@ -2,6 +2,7 @@ import numpy as np
 import cv2
 import glob
 import time
+import argparse
 
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
@@ -90,23 +91,36 @@ def test(model, X_test, y_test, n_predict = 100):
 
     return test_accuracy, pred_time
 
-def search_best(cars, notcars, process_pool = None):
+def train_and_test(cars, notcars, params, model_file = None, rand_state = None, process_pool = None):
 
-    search_params = {
-        'color_space': ['YUV', 'YCrCb'],
-        'orient': [11, 12, 16],
-        'pix_per_cell': [8, 16],
-        'cell_per_block': [2],
-        'spatial_size': [None, (8, 8), (16, 16), (32, 32)],
-        'hist_bins': [None, 16, 32]
-    }
+    X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
 
-    rand_state = 42
+    X_train, X_test = scale(X_train, X_test)
+
+    model, train_time = train(X_train, y_train, rand_state = rand_state)
+
+    test_accuracy, pred_time = test(model, X_test, y_test)
+
+    if model_file is not None:
+
+        params['accuracy'] = test_accuracy
+        params['extraction_time'] = extraction_time
+        params['train_time'] = train_time
+        params['pred_time'] = pred_time
+
+        save_model(model, model_file=os.path.join('models', model_file))
+        save_model(params, model_file=os.path.join('models', model_file.split('.')[0] + '_params.p'))
+
+    return model, test_accuracy, extraction_time, train_time, pred_time
+
+def parameters_search(cars, notcars, file = 'search_params.json', rand_state = None, process_pool = None):
+
+    search_params = load_search_params(file = file)
 
     max_acc = 0
     max_acc_params = None
 
-    print('Searching best params...')
+    print('Searching best parameters using space {}...'.format(search_params))
 
     t1 = time.time()
     i = 0
@@ -127,18 +141,13 @@ def search_best(cars, notcars, process_pool = None):
                                 'hist_bins': hist_bins
                             }
 
-                            X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
-
-                            X_train, X_test = scale(X_train, X_test)
-
-                            model, train_time = train(X_train, y_train, rand_state)
-
-                            test_accuracy, pred_time = test(model, X_test, y_test)
+                            model, test_accuracy, extraction_time, train_time, pred_time = train_and_test(cars, notcars, params, rand_state=rand_state, process_pool=process_pool)
 
                             i += 1
                             
                             if test_accuracy > max_acc:
                                 max_acc = test_accuracy
+                                params['accuracy'] = test_accuracy
                                 params['extraction_time'] = extraction_time
                                 params['train_time'] = train_time
                                 params['pred_time'] = pred_time
@@ -155,47 +164,89 @@ def search_best(cars, notcars, process_pool = None):
 
 if __name__ == '__main__':
 
-    cars, notcars = load_dataset()
+    parser = argparse.ArgumentParser(description='SVC Training')
+
+    parser.add_argument(
+        '--dir',
+        type=str,
+        default='data',
+        help='Images folder'
+    )
+    parser.add_argument(
+        '--rand_state',
+        type=int,
+        default=None,
+        help='Random seed used for shuffling'
+    )
+    parser.add_argument(
+        '--color_space',
+        type=str,
+        default='YCrCb',
+        help='Color space conversion'
+    )
+    parser.add_argument(
+        '--spatial_size',
+        type=int,
+        default=8,
+        help='Spatial binning dimension, can be None to disable'
+    )
+    parser.add_argument(
+        '--hist_bins',
+        type=int,
+        default=32,
+        help='Number color histograms bins, can be None to disable'
+    )
+    parser.add_argument(
+        '--orient',
+        type=int,
+        default=16,
+        help='Number of HOG orientations'
+    )
+    parser.add_argument(
+        '--pix_per_cell',
+        type=int,
+        default=16,
+        help='Number of HOG pixels per cell'
+    )
+    parser.add_argument(
+        '--cell_per_block',
+        type=int,
+        default=2,
+        help='Number of HOG cells per block'
+    )
+    
+    parser.add_argument('--disable-parallel', dest='parallel', action='store_false', help='Disable parallel processing (may decrease feature extraction speed)')
+    parser.set_defaults(parallel=True)
+
+    parser.add_argument('--search', action='store_true', help='If present performs a parameters search')
+    parser.set_defaults(search=False)
+
+    args = parser.parse_args()
+
+    cars, notcars = load_dataset(cars_folder=os.path.join(args.dir, 'vehicles'), notcars_folder=os.path.join(args.dir, 'non-vehicles'))
 
     pool_size = os.cpu_count()
 
-    if pool_size > 0:
-        process_pool = Pool(pool_size)
-    else:
+    if args.parallel is False or pool_size < 2:
         process_pool = None
+    else:
+        process_pool = Pool(pool_size)
 
     print('Using {} cores'.format(1 if process_pool is None else pool_size))
 
-    search = False
-
-    if search:
-        search_best(cars, notcars, process_pool = process_pool)
+    if args.search:
+        parameters_search(cars, notcars, rand_state = args.rand_state, process_pool = process_pool)
     else:
 
         params = {
-            'color_space': 'YCrCb',
-            'orient': 12,  # HOG orientations
-            'pix_per_cell': 16, # HOG pixels per cell
-            'cell_per_block': 2, # HOG cells per block
-            'spatial_size': (32, 32), # Spatial binning dimensions
-            'hist_bins': 32,    # Number of histogram bins
+            'color_space': args.color_space,        # Color space
+            'orient': args.orient,                  # HOG orientations
+            'pix_per_cell': args.pix_per_cell,      # HOG pixels per cell
+            'cell_per_block': args.cell_per_block,  # HOG cells per block
+            'spatial_size': args.spatial_size,      # Spatial binning dimensions
+            'hist_bins': args.hist_bins,            # Number of histogram bins
         }
-
-        rand_state = 42
-
-        X_train, X_test, y_train, y_test, extraction_time = extract_train_test(cars, notcars, params, rand_state = rand_state, process_pool = process_pool)
-
-        X_train, X_test = scale(X_train, X_test)
-
-        model, train_time = train(X_train, y_train, rand_state)
-
-        test_accuracy, pred_time = test(model, X_test, y_test)
-
+    
         model_file = time.strftime('model-%Y%m%d-%H%M%S.p')
 
-        params['extraction_time'] = extraction_time
-        params['train_time'] = train_time
-        params['pred_time'] = pred_time
-
-        save_model(model, model_file=os.path.join('models', model_file))
-        save_model(params, model_file=os.path.join('models', model_file.split('.')[0] + '_params.p'))
+        train_and_test(cars, notcars, params, model_file=model_file, rand_state=args.rand_state, process_pool=process_pool)

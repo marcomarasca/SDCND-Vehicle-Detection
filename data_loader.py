@@ -1,6 +1,7 @@
 import os
 import time
 import pickle
+import json
 
 from sklearn.externals import joblib
 
@@ -23,6 +24,13 @@ def load_dataset(cars_folder = os.path.join('data', 'vehicles'),
     print('Loading dataset...DONE ({} s, Car images: {}, Not-Car images: {})'.format(round(t2 - t1, 2), len(cars), len(notcars)))
 
     return cars, notcars
+
+def load_search_params(file = 'search_params.json'):
+    
+    with open(file) as f:
+        data = json.load(f)
+    
+    return data
 
 def save_model(model, model_file = os.path.join('models', 'model.p')):
     print('Saving model to {}...'.format(model_file))

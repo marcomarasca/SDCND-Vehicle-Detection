@@ -13,7 +13,7 @@ class FeaturesExtractor:
         'YCrCb': cv2.COLOR_BGR2YCrCb,
     }
 
-    def __init__(self, color_space= 'YCrCb', spatial_size=(32, 32), hist_bins=32, orient=12, pix_per_cell=8, cell_per_block=2):
+    def __init__(self, color_space= 'YCrCb', spatial_size=8, hist_bins=32, orient=16, pix_per_cell=16, cell_per_block=2):
         self.color_space = color_space
         self.spatial_size = spatial_size
         self.hist_bins = hist_bins
@@ -25,7 +25,7 @@ class FeaturesExtractor:
         """
         Computes spatial features
         """
-        features = cv2.resize(img, self.spatial_size).ravel()
+        features = cv2.resize(img, (self.spatial_size, self.spatial_size)).ravel()
 
         return features
 

@@ -1,0 +1,8 @@
+{
+    "color_space": ["YUV", "YCrCb"],
+    "orient": [11, 12, 16],
+    "pix_per_cell": [8, 16],
+    "cell_per_block": [2],
+    "spatial_size": [null, 8, 16, 32],
+    "hist_bins": [null, 16, 32]
+}
