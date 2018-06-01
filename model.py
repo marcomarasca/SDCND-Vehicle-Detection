@@ -201,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--orient',
         type=int,
-        default=16,
+        default=12,
         help='Number of HOG orientations'
     )
     parser.add_argument(
