@@ -74,9 +74,9 @@ def train(X_train, y_train, rand_state):
     return svc, train_time
 
 def test(model, X_test, y_test, n_predict = 100):
-    test_accuracy = round(model.score(X_test, y_test), 4)
+    accuracy = round(model.score(X_test, y_test), 4)
     # Check the score of the SVC
-    print('Test Accuracy: {}'.format(test_accuracy))
+    print('Test Accuracy: {}'.format(accuracy))
 
     # Check prediction time
     t1 = time.time()
@@ -87,7 +87,7 @@ def test(model, X_test, y_test, n_predict = 100):
 
     print('Prediction time for {} samples: {} s'.format(n_predict, pred_time))
 
-    return test_accuracy, pred_time
+    return accuracy, pred_time
 
 def train_and_test(cars, notcars, params, rand_state = None, process_pool = None):
 
@@ -104,11 +104,12 @@ def train_and_test(cars, notcars, params, rand_state = None, process_pool = None
     model, train_time = train(X_train, y_train, rand_state = rand_state)
 
     # Test the predictions
-    test_accuracy, pred_time = test(model, X_test, y_test)
+    accuracy, pred_time = test(model, X_test, y_test)
 
+    params['window'] = cv2.imread(cars[0]).shape[0]
     params['model'] = model
     params['scaler'] = scaler
-    params['accuracy'] = test_accuracy
+    params['accuracy'] = accuracy
     params['extraction_time'] = ext_time
     params['train_time'] = train_time
     params['pred_time'] = pred_time
@@ -259,6 +260,7 @@ if __name__ == '__main__':
      
         save_model(model_params, model_file=os.path.join('models', model_file))
 
-    except Exception:
+    except Exception as e:
         if process_pool is not None:
             process_pool.terminate()
+        raise e
