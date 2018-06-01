@@ -41,66 +41,40 @@ def process_udacity_dataset(map_file = os.path.join('data', 'udacity', 'labels_c
         # Skip header
         _ = next(reader, None)
 
-        i = -1
-        
         for x_min, y_min, x_max, y_max, img_file, label, _ in filter(lambda row:row[5] in ['Car', 'Truck'], tqdm(reader, total = len(lines), unit = ' images', desc = 'Parsing Vehicles')):
             
-            if i % skip == 0:
-                img = cv2.imread(os.path.join(img_folder, img_file))
+            img = cv2.imread(os.path.join(img_folder, img_file))
 
-                x_min = int(x_min)
-                x_max = int(x_max)
-                y_min = int(y_min)
-                y_max = int(y_max)
+            x_min = int(x_min)
+            x_max = int(x_max)
+            y_min = int(y_min)
+            y_max = int(y_max)
 
-                if y_max <= y_min or x_max <= x_min:
-                    print('Wrong bounding box for {}: ({}, {}), ({}, {})'.format(img_file, x_min, y_min, x_max, y_max))
-                    continue
+            if y_max <= y_min or x_max <= x_min:
+                print('Wrong bounding box for {}: ({}, {}), ({}, {})'.format(img_file, x_min, y_min, x_max, y_max))
+                continue
 
-                bboxes = file_bboxes.get(img_file)
+            bboxes = file_bboxes.get(img_file)
 
-                if bboxes is None:
-                    bboxes = []
-                    file_bboxes[img_file] = bboxes
+            if bboxes is None:
+                bboxes = []
+                file_bboxes[img_file] = bboxes
 
-                bbox = ((x_min, y_min), (x_max, y_max))
-
-                bboxes.append(bbox)
-
-            i += 1
+            bboxes.append(((x_min, y_min), (x_max, y_max)))
             
     print('Processed images: {}'.format(len(file_bboxes)))
 
-    for img_file, bboxes in tqdm(file_bboxes.items(), unit=' images', desc='Saving images'):
-        img = cv2.imread(os.path.join(img_folder, img_file))
-        
-        _save_windows(img, bboxes, vehicles_folder, img_file, dest_size, format)
+    for i, (img_file, bboxes) in enumerate(tqdm(file_bboxes.items(), unit=' images', desc='Saving images')):
 
-        window_size = np.random.choice([128, 256])
-        stride = 96
-        y_gap = 120 # Skip the hood
+        if i % skip == 0:
 
-        free_boxes = []
-        done = False
-        max_notvehicles = len(bboxes)
-        for x in range(0, img.shape[1], stride):
-            # Skip x with 1/3 probability
-            if np.random.choice([True, False], replace = False, p = [1/3, 2/3]):
-                continue
-            for y in range(img.shape[0] - y_gap, window_size, -stride):
-                # Skip y with 1/3 probability
-                if np.random.choice([True, False], replace = False, p = [1/3, 2/3]):
-                    continue
-                bbox = ((x, y - window_size), (x + window_size, y))
-                if is_free(bbox, bboxes):
-                    free_boxes.append(bbox)
-                if len(free_boxes) >= max_notvehicles:
-                    done = True
-                    break
-            if done:
-                break
-        
-        _save_windows(img, free_boxes, notvehicles_folder, img_file, dest_size, format)
+            img = cv2.imread(os.path.join(img_folder, img_file))
+            
+            _save_windows(img, bboxes, vehicles_folder, img_file, dest_size, format)
+
+            notvehicle_boxes = _get_notvehicles_bboxes(bboxes, img.shape)
+            
+            _save_windows(img, notvehicle_boxes, notvehicles_folder, img_file, dest_size, format)
 
 def _save_windows(img, bboxes, folder, img_file, dest_size, format):
 
@@ -116,12 +90,42 @@ def _save_windows(img, bboxes, folder, img_file, dest_size, format):
         dest_file = os.path.join(folder, '{}_{}.{}'.format(img_file.split('.')[0], i,  format))
         cv2.imwrite(dest_file, img_window)
 
-def is_free(bbox, bboxes):
+def _get_notvehicles_bboxes(taken_bboxes, img_shape):
+    window_size = np.random.choice([128, 256])
+    stride = int(window_size * 0.8)
+    y_gap = 120 # Skip the hood
+
+    bboxes = []
+    max_notvehicles = len(taken_bboxes)
+    for x in range(0, img_shape[1], stride):
+        # Skip x with 1/3 probability
+        if np.random.choice([True, False], replace = False, p = [1/3, 2/3]):
+            continue
+        for y in range(img_shape[0] - y_gap, window_size, -stride):
+            # Skip y with 1/3 probability
+            if np.random.choice([True, False], replace = False, p = [1/3, 2/3]):
+                continue
+            bbox = ((x, y - window_size), (x + window_size, y))
+            if _is_free_box(bbox, taken_bboxes):
+                bboxes.append(bbox)
+            if len(bboxes) >= max_notvehicles:
+                return bboxes
+
+    return bboxes
+
+def _is_free_box(bbox, bboxes):
+
     for taken_bbox in bboxes:
-        if not((bbox[1][0] < taken_bbox[0][0] or bbox[0][0] > taken_bbox[1][0]) 
-                and 
-                (bbox[1][1] < taken_bbox[0][1] or bbox[0][1] > taken_bbox[1][1])):
+        if _overlap(bbox, taken_bbox):
             return False
+
+    return True
+
+def _overlap(bbox1, bbox2):
+    if bbox1[1][0] <= bbox2[0][0]: return False # bbox1 is left of bbox2
+    if bbox1[0][0] >= bbox2[1][0]: return False # bbox1 is right of bbox2
+    if bbox1[1][1] <= bbox2[0][1]: return False # bbox1 is above bbox2
+    if bbox1[0][1] >= bbox2[1][1]: return False # bbox1 is below bbox2
 
     return True
 
