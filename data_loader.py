@@ -4,7 +4,6 @@ import pickle
 import json
 
 from sklearn.externals import joblib
-
 from glob import glob
 
 def load_dataset(cars_folder = os.path.join('data', 'vehicles'),
