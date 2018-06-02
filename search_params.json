@@ -1,6 +1,6 @@
 {
     "color_space": ["YUV", "YCrCb"],
-    "orient": [9, 12, 16],
+    "orient": [9, 11, 12],
     "pix_per_cell": [8, 16],
     "cell_per_block": [2],
     "spatial_size": [null, 8, 16, 32],

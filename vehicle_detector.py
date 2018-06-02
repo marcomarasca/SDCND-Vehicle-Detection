@@ -96,7 +96,7 @@ class VehicleDetector:
         # Scales if necessary
         if scale != 1.0:
             # Uses the correct algorithm for resizing
-            interpolation = self.interpolation[0] if scale < 1 else self.interpolation[1]
+            interpolation = self.interpolation[0] if scale > 1 else self.interpolation[1]
             resize_shape = (np.int(img_layer.shape[1]/scale), np.int(img_layer.shape[0]/scale))
             img_layer = cv2.resize(img_layer, resize_shape, interpolation = interpolation)
 
@@ -138,7 +138,7 @@ class VehicleDetector:
                 window_img = img_layer[window_min_y:window_min_y + self.window, window_min_x:window_min_x + self.window]
                 
                 if window_img.shape[0] < self.window or window_img.shape[1] < self.window:
-                    window_img = cv2.resize(window_img, (self.window, self.window), interpolation = self.interpolation[0])
+                    window_img = cv2.resize(window_img, (self.window, self.window), interpolation = self.interpolation[1])
 
                 confidence = self.window_confidence(window_img, hog_features, x_pos, y_pos, blocks_per_window, process_pool=process_pool)
 

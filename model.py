@@ -52,13 +52,15 @@ def scale(X_train, X_test):
 
     return X_train, X_test, X_scaler
 
+from sklearn.model_selection import GridSearchCV
+
 def train(X_train, y_train, rand_state):
   
     print('Feature Vector Size:', len(X_train[0]))
 
     # Use a linear SVC
-    svc = LinearSVC(random_state = rand_state)
-    
+    svc = LinearSVC(random_state = rand_state, dual=False, C=10**-2)
+
     t1 = time.time()
     
     print('Training on {} images...'.format(len(X_train)))
@@ -201,7 +203,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--orient',
         type=int,
-        default=12,
+        default=11,
         help='Number of HOG orientations'
     )
     parser.add_argument(

@@ -172,7 +172,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--skip',
         type=int,
-        default=5,
+        default=7,
         help='Only process every x images (e.g. to avoid time series data)'
     )
 
