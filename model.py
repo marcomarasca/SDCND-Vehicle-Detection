@@ -52,14 +52,13 @@ def scale(X_train, X_test):
 
     return X_train, X_test, X_scaler
 
-from sklearn.model_selection import GridSearchCV
-
 def train(X_train, y_train, rand_state):
   
     print('Feature Vector Size:', len(X_train[0]))
 
     # Use a linear SVC
-    svc = LinearSVC(random_state = rand_state, dual=False, C=10**-2)
+    #svc = LinearSVC(random_state = rand_state, dual=False, C=10**-2)
+    svc = LinearSVC(random_state = rand_state)
 
     t1 = time.time()
     

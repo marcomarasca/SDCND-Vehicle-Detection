@@ -44,7 +44,7 @@ class VehicleDetector:
             cell_per_block = self.cell_per_block
         )
 
-    def window_confidence(self, window_img, layer_hog_features, x_pos, y_pos, blocks_per_window, process_pool = None):
+    def _window_confidence(self, window_img, layer_hog_features, x_pos, y_pos, blocks_per_window):
         
         features = []
         
@@ -55,7 +55,7 @@ class VehicleDetector:
 
         # Color historgram features
         if self.features_extractor.hist_bins is not None:
-            hist_features = self.features_extractor.color_hist(window_img, process_pool=process_pool)
+            hist_features = self.features_extractor.color_hist(window_img)
             features.append(hist_features)
 
         hog_features = []
@@ -74,12 +74,11 @@ class VehicleDetector:
         features = self.scaler.transform(features.reshape(1, -1))    
 
         # Computes prediction confidence
-        
         confidence = self.model.decision_function(features)
 
         return confidence
     
-    def windows_search(self, img, y_min = None, y_max = None, scale = 1.0, process_pool = None):
+    def windows_search(self, img, y_min = None, y_max = None, scale = 1.0):
 
         if y_min is None:
             y_min = 0
@@ -110,18 +109,11 @@ class VehicleDetector:
         y_steps = (y_blocks - blocks_per_window) // self.cells_per_step + 1
 
         # Compute individual channel HOG features for the entire image
-        if process_pool is None:
-            hog_features = []
+        hog_features = []
 
-            for channel in range(img_layer.shape[2]):
-                ch_features = self.features_extractor.extract_hog_features(img_layer[:,:,channel], feature_vec = False)
-                hog_features.append(ch_features)
-        else:
-            hog_features = process_pool.starmap(self.features_extractor.extract_hog_features, [
-                (img_layer[:,:,0], False, False), 
-                (img_layer[:,:,1], False, False), 
-                (img_layer[:,:,2], False, False)
-            ])
+        for channel in range(img_layer.shape[2]):
+            ch_features = self.features_extractor.extract_hog_features(img_layer[:,:,channel], feature_vec = False)
+            hog_features.append(ch_features)
             
         windows = []
 
@@ -140,7 +132,7 @@ class VehicleDetector:
                 if window_img.shape[0] < self.window or window_img.shape[1] < self.window:
                     window_img = cv2.resize(window_img, (self.window, self.window), interpolation = self.interpolation[1])
 
-                confidence = self.window_confidence(window_img, hog_features, x_pos, y_pos, blocks_per_window, process_pool=process_pool)
+                confidence = self._window_confidence(window_img, hog_features, x_pos, y_pos, blocks_per_window)
 
                 window_scale = np.int(self.window * scale)
 
@@ -151,23 +143,24 @@ class VehicleDetector:
                 
         return windows
 
-    def heat(self, heatmap, windows):
-        
-        for window in filter(lambda window:window[1] > self.min_confidence, windows):
-            bbox, _ = window
-            heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1
-            #heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1 * confidence
+    def _heat(self, heatmap, windows, min_confidence):
+    
+        # y_min, y_max, scale, bboxes
+        for _, _, _, bboxes in windows:
+            # bbox, confidence
+            for bbox, _ in filter(lambda bbox:bbox[1] > min_confidence, bboxes):
+                heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1
         
         return heatmap
 
-    def heatmap(self, img, windows):
+    def heatmap(self, img, windows, min_confidence, threshold):
         
         # Base empty heatmap
         heatmap = np.zeros_like(img[:,:,0]).astype(np.float)
         # Builds heat
-        self.heat(heatmap, windows)
+        self._heat(heatmap, windows, min_confidence)
         # Threshold
-        heatmap[heatmap <= self.heat_threshold] = 0
+        heatmap[heatmap <= threshold] = 0
         # Clipping
         heatmap = np.clip(heatmap, 0, 255)
         
@@ -200,14 +193,18 @@ class VehicleDetector:
         windows = []
 
         # Extract the windows for each layer
-        for y_min, y_max, scale in self.layers:
-            
-            layer_windows = self.windows_search(img, y_min = y_min, y_max = y_max, scale = scale, process_pool = process_pool)
-
-            windows.extend(layer_windows)
+        if process_pool is None:
+            for y_min, y_max, scale in self.layers:
+                layer_windows = self.windows_search(img, y_min = y_min, y_max = y_max, scale = scale)
+                windows.append((y_min, y_max, scale, layer_windows))
+        else:
+            layers_windows = process_pool.starmap(self.windows_search, [(img, y_min, y_max, scale) for (y_min, y_max, scale) in self.layers])
+            for i, layer_windows in enumerate(layers_windows):
+                y_min, y_max, scale = self.layers[i]
+                windows.append((y_min, y_max, scale, layer_windows))
 
         # Computes the heatmap
-        heatmap = self.heatmap(img, windows)
+        heatmap = self.heatmap(img, windows, self.min_confidence, self.heat_threshold)
 
         # Computes the detected cars
         bounding_boxes = self.bounding_boxes(heatmap)
