@@ -24,7 +24,7 @@ def load_dataset(cars_folder = os.path.join('data', 'vehicles'),
 
     return cars, notcars
 
-def load_search_params(file = 'search_params.json'):
+def load_config(file = 'search_params.json'):
     
     with open(file) as f:
         data = json.load(f)

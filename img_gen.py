@@ -26,16 +26,20 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     
     plt.figure(figsize = (20, 15))
     
-    rows = np.ceil((len(windows) + 1) / 2)
-
-    i = 1
+    rows = np.ceil((len(windows) + 2) / 2)
     
     all_bboxes = []
+
+    i = 1
     for y_min, y_max, scale, bboxes in windows:
         
         i += 1
         plt.subplot(rows, 2, i)
-        plt.title('Window Search (Scale: {})'.format(scale))
+        w_tot = len(bboxes)
+        w_pos = len(list(filter(lambda bbox:bbox[1] >= vd.min_confidence, bboxes)))
+        w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < vd.min_confidence, bboxes)))
+        box_text = 'Window Search - Scale: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(scale, w_tot, w_pos, w_rej) 
+        plt.title(box_text)
         box_img = draw_windows(img, bboxes, min_confidence = vd.min_confidence)
         plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
         all_bboxes.extend(bboxes)
@@ -43,15 +47,19 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.subplot(rows, 2, 1)
     plt.title('Original Image')
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
-        
+    
     box_img = draw_windows(img, all_bboxes, min_confidence = vd.min_confidence)
     plt.subplot(rows, 2, i + 1)
-    plt.title('Combined Windows (Min Confidence: {})'.format(vd.min_confidence))
+    w_tot = len(all_bboxes)
+    w_pos = len(list(filter(lambda bbox:bbox[1] >= vd.min_confidence, all_bboxes)))
+    w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < vd.min_confidence, all_bboxes)))
+    box_text = 'Combined Windows - Min Confidence: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(vd.min_confidence, w_tot, w_pos, w_rej) 
+    plt.title(box_text)
     plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
         
     plt.tight_layout()
     img_prefix = os.path.split(img_file)[-1].split('.')[0]
-    plt.savefig(os.path.join(out_dir,  img_prefix + '_window_search.png'))
+    plt.savefig(os.path.join(out_dir,  img_prefix + '_window_search.jpg'))
     
     plt.figure(figsize = (20, 10))
     
@@ -60,20 +68,21 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     
     plt.subplot(222)
-    plt.title('Combined Windows (Min Confidence: {})'.format(vd.min_confidence))
+    plt.title(box_text)
     plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
     plt.subplot(223)
     plt.title('Heatmap')
-    heatmap_o = vd.heatmap(img, windows, 0, 0)
+    heatmap_o = vd._heatmap(img, windows, 0)
     plt.imshow(heatmap_o, cmap = 'hot')
     
     plt.subplot(224)
-    plt.title('Heatmap (Min confidence: {} , Threshold: {})'.format(vd.min_confidence, vd.heat_threshold))
+    heatmap_text = 'Heatmap - Min confidence: {}, Threshold: {}'.format(vd.min_confidence, vd.heat_threshold)
+    plt.title(heatmap_text)
     plt.imshow(heatmap, cmap = 'hot')
     
     plt.tight_layout()
     
-    plt.savefig(os.path.join(out_dir,  img_prefix + '_heatmap.png'))
+    plt.savefig(os.path.join(out_dir,  img_prefix + '_heatmap.jpg'))
     
     plt.figure(figsize = (20, 10))
     
@@ -82,20 +91,21 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     
     plt.subplot(222)
-    plt.title('Combined Windows (Min Confidence: {})'.format(vd.min_confidence))
+    plt.title(box_text)
     plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
+    
     plt.subplot(223)
-    plt.title('Heatmap (Min confidence: {} , Threshold: {})'.format(vd.min_confidence, vd.heat_threshold))
+    plt.title(heatmap_text)
     plt.imshow(heatmap, cmap = 'hot')
     
-    labeled_img = draw_bboxes(img, bounding_boxes, (100, 255, 0), 3)
+    labeled_img = draw_bboxes(img, bounding_boxes, (0, 255, 150), 2, fill = True)
     
     plt.subplot(224)
     plt.title('Labeled Image')
     plt.imshow(cv2.cvtColor(labeled_img, cv2.COLOR_BGR2RGB))
     
     plt.tight_layout()
-    plt.savefig(os.path.join(out_dir,  img_prefix + '_labeled.png'))
+    plt.savefig(os.path.join(out_dir,  img_prefix + '_labeled.jpg'))
 
     return t2 - t1
 
@@ -116,6 +126,13 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
+        '--out_dir',
+        type=str,
+        default='output_images',
+        help='Destination folder'
+    )
+
+    parser.add_argument(
         '--model_file',
         type=str,
         default=os.path.join('models', 'model.p'),
@@ -125,7 +142,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--cells_per_step',
         type=int,
-        default=1,
+        default=2,
         help='Number of cells per steps'
     )
 
@@ -148,12 +165,18 @@ if __name__ == '__main__':
 
     args = parser.parse_args()
 
-    imgs = glob.glob(os.path.join(args.dir, '*.jpg'))
+    formats = ['jpg', 'png']
 
-    vd = VehicleDetector(model_file=args.model_file, 
-                        cells_per_step=args.cells_per_step, 
-                        min_confidence = args.min_confidence, 
-                        heat_threshold = args.threshold)
+    imgs = []
+    
+    for ext in formats:
+        imgs.extend(glob.glob(os.path.join(args.dir, '*.' + ext)))
+
+    vd = VehicleDetector(model_file     = args.model_file, 
+                         cells_per_step = args.cells_per_step, 
+                         min_confidence = args.min_confidence, 
+                         heat_threshold = args.threshold,
+                         smooth_frames  = 0)
 
     pool_size = os.cpu_count()
 
@@ -170,7 +193,7 @@ if __name__ == '__main__':
         
         for img_file in tqdm(imgs, unit = ' images', desc = 'Image Processing'):
 
-            img_t = process_img(vd, img_file, process_pool=process_pool)
+            img_t = process_img(vd, img_file, out_dir = args.out_dir, process_pool = process_pool)
 
             t += img_t
         

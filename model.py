@@ -4,11 +4,12 @@ import glob
 import time
 import argparse
 import signal
+import os
 
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
 from features_extractor import FeaturesExtractor
-from data_loader import *
+from data_loader import load_dataset, load_config, save_model
 from sklearn.model_selection import train_test_split
 from multiprocessing import Pool
 
@@ -52,13 +53,13 @@ def scale(X_train, X_test):
 
     return X_train, X_test, X_scaler
 
-def train(X_train, y_train, rand_state):
+def train(X_train, y_train):
   
     print('Feature Vector Size:', len(X_train[0]))
 
     # Use a linear SVC
-    #svc = LinearSVC(random_state = rand_state, dual=False, C=10**-2)
-    svc = LinearSVC(random_state = rand_state)
+    #svc = LinearSVC(dual=False, C=10**-2)
+    svc = LinearSVC()
 
     t1 = time.time()
     
@@ -102,7 +103,7 @@ def train_and_test(cars, notcars, params, rand_state = None, process_pool = None
     X_train, X_test, scaler = scale(X_train, X_test)
 
     # Train the Linear SVC
-    model, train_time = train(X_train, y_train, rand_state = rand_state)
+    model, train_time = train(X_train, y_train)
 
     # Test the predictions
     accuracy, pred_time = test(model, X_test, y_test)
@@ -119,7 +120,7 @@ def train_and_test(cars, notcars, params, rand_state = None, process_pool = None
 
 def parameters_search(cars, notcars, params_file = 'search_params.json', rand_state = None, process_pool = None):
 
-    search_params = load_search_params(file = params_file)
+    search_params = load_config(file = params_file)
 
     max_acc = 0
     max_acc_params = None
@@ -128,6 +129,10 @@ def parameters_search(cars, notcars, params_file = 'search_params.json', rand_st
 
     t1 = time.time()
     experiments = 0
+
+    # Makes sure to get consistent shuffling between runs
+    if rand_state is None:
+        rand_state = np.random.randint(0, 100)
     
     for color_space in search_params['color_space']:
         for orient in search_params['orient']:
@@ -208,7 +213,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--pix_per_cell',
         type=int,
-        default=16,
+        default=8,
         help='Number of HOG pixels per cell'
     )
     parser.add_argument(
@@ -223,6 +228,12 @@ if __name__ == '__main__':
         default=None,
         help='Performs a parameters search, the value is a json file with parameters space'
     )
+    parser.add_argument(
+        '--limit',
+        type=int,
+        default=None,
+        help='Limits the amount of samples of cars/not-cars'
+    )
     
     parser.add_argument('--disable-parallel', dest='parallel', action='store_false', help='Disable parallel processing (may decrease feature extraction speed)')
     parser.set_defaults(parallel=True)
@@ -230,6 +241,10 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     cars, notcars = load_dataset(cars_folder=os.path.join(args.dir, 'vehicles'), notcars_folder=os.path.join(args.dir, 'non-vehicles'))
+
+    if args.limit is not None:
+        cars = cars[:args.limit]
+        notcars = notcars[:args.limit]
 
     pool_size = os.cpu_count()
 
