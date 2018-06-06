@@ -9,7 +9,7 @@ import os
 from sklearn.svm import LinearSVC
 from sklearn.preprocessing import StandardScaler
 from features_extractor import FeaturesExtractor
-from data_loader import load_dataset, load_config, save_model
+from data_loader import load_dataset, load_config, save_model, load_model
 from sklearn.model_selection import train_test_split
 from multiprocessing import Pool
 
@@ -22,19 +22,45 @@ def extract_features(cars, notcars, params, process_pool = None):
     pix_per_cell = params['pix_per_cell']
     cell_per_block = params['cell_per_block']
 
-    t1 = time.time()
+    features_file = os.path.join('models', 'features_{}_{}_{}_{}_{}_{}.p'.format(
+        'bgr' if color_space is None else color_space,
+        'off' if spatial_size is None else str(spatial_size),
+        'off' if hist_bins is None else str(hist_bins),
+        str(orient),
+        str(pix_per_cell),
+        str(cell_per_block)
+    ))
 
-    fe = FeaturesExtractor(color_space=color_space, 
-                           spatial_size=spatial_size, 
-                           hist_bins=hist_bins,
-                           orient=orient,
-                           pix_per_cell=pix_per_cell,
-                           cell_per_block=cell_per_block)
+    # Loads saved features
+    if os.path.isfile(features_file):
+        features = load_model(model_file = features_file)
+        
+        car_features = features['car']
+        notcar_features = features['notcar']
 
-    car_features = fe.extract_features(cars, process_pool=process_pool)
-    notcar_features = fe.extract_features(notcars, process_pool=process_pool)
+        extraction_time = features['extraction_time']
+    else:
+        t1 = time.time()
 
-    extraction_time = round(time.time() - t1, 2)
+        fe = FeaturesExtractor(color_space=color_space, 
+                               spatial_size=spatial_size, 
+                               hist_bins=hist_bins,
+                               orient=orient,
+                               pix_per_cell=pix_per_cell,
+                               cell_per_block=cell_per_block)
+
+        car_features = fe.extract_features(cars, process_pool=process_pool)
+        notcar_features = fe.extract_features(notcars, process_pool=process_pool)
+
+        extraction_time = round(time.time() - t1, 2)
+
+        features = {
+            'car': car_features,
+            'notcar': notcar_features,
+            'extraction_time': extraction_time
+        }
+
+        save_model(features, features_file)
 
     # Create an array stack of feature vectors
     X = np.vstack((car_features, notcar_features)).astype(np.float64)
@@ -60,7 +86,7 @@ def train(X_train, y_train):
     # Use a linear SVC
     #svc = LinearSVC(dual=False, C=10**-2)
     svc = LinearSVC()
-
+    
     t1 = time.time()
     
     print('Training on {} images...'.format(len(X_train)))
@@ -96,8 +122,12 @@ def train_and_test(cars, notcars, params, rand_state = None, process_pool = None
     # Extract features
     X, y, ext_time = extract_features(cars, notcars, params, process_pool = process_pool)
 
+    # Makes sure to get consistent shuffling between runs
+    if rand_state is None:
+        rand_state = np.random.randint(0, 100)
+
     # Split up data into randomized training and test sets
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state = rand_state)
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, random_state = rand_state)
 
     # Scale data
     X_train, X_test, scaler = scale(X_train, X_test)
