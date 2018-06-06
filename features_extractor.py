@@ -16,7 +16,7 @@ class FeaturesExtractor:
         'YCrCb': cv2.COLOR_BGR2YCrCb,
     }
 
-    def __init__(self, color_space= 'YCrCb', spatial_size=16, hist_bins=32, orient=11, pix_per_cell=16, cell_per_block=2):
+    def __init__(self, color_space= 'YCrCb', spatial_size=16, hist_bins=32, orient=16, pix_per_cell=8, cell_per_block=2):
         """
         Initializes the features extractor with the given parameters
 
@@ -63,9 +63,7 @@ class FeaturesExtractor:
         """
         # Compute the histogram of the color channels separately
         if process_pool is None:
-            histograms = []
-            for channel in range(img.shape[2]):
-                histograms.append(self._color_hist(img[:,:,channel]))
+            histograms = list(map(lambda ch:self._color_hist(img[:,:,ch]), range(img.shape[2])))
         else:
             histograms = process_pool.map(self._color_hist, [img[:,:,0], img[:,:,1], img[:,:,2]])
 
@@ -147,9 +145,7 @@ class FeaturesExtractor:
 
         # HOG features
         if process_pool is None:
-            hog_features = []
-            for channel in range(feature_image.shape[2]):
-                hog_features.append(self.extract_hog_features(feature_image[:,:,channel]))
+            hog_features = list(map(lambda ch:self.extract_hog_features(feature_image[:,:,ch]), range(feature_image.shape[2])))
         else:
             hog_features = process_pool.map(self.extract_hog_features, [feature_image[:,:,0], feature_image[:,:,1], feature_image[:,:,2]])
             

@@ -51,27 +51,40 @@ class VideoProcessor:
         
         bboxes, heatmap, windows = self.vehicle_detector.detect_vehicles(img, process_pool = process_pool)
 
+        frame_out = np.copy(img) if self.debug else img
         # Labelled image
-        frame_out = draw_bboxes(img, bboxes, (0, 255, 150), 2, fill = True)
-        self.write_text(frame_out, 'Detected Cars: {}'.format(len(bboxes)))
+        frame_out = draw_bboxes(frame_out, bboxes, (0, 255, 150), 2, fill = True)
+
+        frame_out_text = 'Frame Smoothing: {}, Min Confidence: {}, Threshold: {}'.format(
+            self.vehicle_detector.smooth_frames,
+            self.vehicle_detector.min_confidence,
+            self.vehicle_detector.heat_threshold
+        )
+        
+        self.write_text(frame_out, frame_out_text)
+        self.write_text(frame_out, 'Detected Cars: {}'.format(len(bboxes)), pos = (30, frame_out.shape[0] - 30), font_color = (0, 250, 150))
+        
         frame_out = cv2.cvtColor(frame_out, cv2.COLOR_BGR2RGB)
        
         if self.debug:
 
             result = []
 
+            self.write_text(frame_out, '{}'.format(self.frame_count), pos = (frame_out.shape[1] - 60, 30))
             result.append(frame_out)
             
             # Unthresholded heatmap image
             heatmap_o = self.vehicle_detector._heatmap(img, windows, 0)
             heatmap_o = self.normalize_heatmap(heatmap_o)
             heatmap_o = np.dstack((heatmap_o, np.zeros_like(heatmap_o), np.zeros_like(heatmap_o)))
+            self.write_text(heatmap_o, '{}'.format(self.frame_count), pos = (frame_out.shape[1] - 60, 30))
 
             result.append(heatmap_o)
 
             # Heatmap image
             heatmap = self.normalize_heatmap(heatmap)
             heatmap = np.dstack((np.zeros_like(heatmap), np.zeros_like(heatmap), heatmap))
+            self.write_text(heatmap, '{}'.format(self.frame_count), pos = (frame_out.shape[1] - 60, 30))
             
             result.append(cv2.cvtColor(heatmap, cv2.COLOR_BGR2RGB))
 
@@ -81,30 +94,34 @@ class VideoProcessor:
             all_windows = []
             
             # Windows search image
-            for _, _, scale, layer_windows in windows:
+            for scale, layer_windows in windows:
                 
                 all_windows.extend(layer_windows)
 
-                layer_img = draw_windows(img, layer_windows, min_confidence = self.vehicle_detector.min_confidence)
+                layer_img = draw_windows(np.copy(img), layer_windows, min_confidence = self.vehicle_detector.min_confidence)
                 
                 w_tot = len(layer_windows)
                 w_pos = len(list(filter(lambda bbox:bbox[1] >= self.vehicle_detector.min_confidence, layer_windows)))
                 w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < self.vehicle_detector.min_confidence, layer_windows)))
                 
-                layer_text = 'Scale: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(scale, w_tot, w_pos, w_rej)
-                self.write_text(layer_img, layer_text)
+                self.write_text(layer_img, 'Scale: {}, Min Confidence: {}'.format(scale, self.vehicle_detector.min_confidence))
+                layer_text = 'Windows (Total/Positive/Rejected): {}/{}/{}'.format(w_tot, w_pos, w_rej)
+                self.write_text(layer_img, layer_text, pos = (30, layer_img.shape[0] - 30))
+                self.write_text(layer_img, '{}'.format(self.frame_count), pos = (frame_out.shape[1] - 60, 30))
 
                 result.append(cv2.cvtColor(layer_img, cv2.COLOR_BGR2RGB))
 
             # Combined scales image
-            box_img = draw_windows(img, all_windows, min_confidence = self.vehicle_detector.min_confidence)
+            box_img = draw_windows(np.copy(img), all_windows, min_confidence = self.vehicle_detector.min_confidence)
 
             w_tot = len(all_windows)
             w_pos = len(list(filter(lambda bbox:bbox[1] >= self.vehicle_detector.min_confidence, all_windows)))
             w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < self.vehicle_detector.min_confidence, all_windows)))
             
-            box_text = 'Min Confidence: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(self.vehicle_detector.min_confidence, w_tot, w_pos, w_rej)
-            self.write_text(box_img, box_text)
+            self.write_text(box_img, 'Min Confidence: {}'.format(self.vehicle_detector.min_confidence))
+            box_text = 'Windows (Total/Positive/Rejected): {}/{}/{}'.format(w_tot, w_pos, w_rej)
+            self.write_text(box_img, box_text, pos = (30, layer_img.shape[0] - 30))
+            self.write_text(box_img, '{}'.format(self.frame_count), pos = (box_img.shape[1] - 60, 30))
 
             result.append(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))            
 
@@ -118,8 +135,8 @@ class VideoProcessor:
         if stage_idx == 0:
             result = self.process_frame(frame, process_pool)
             self.processed_frames.append(result)
-        
-        frame_out = self.processed_frames[self.frame_count][stage_idx] 
+
+        frame_out = self.processed_frames[self.frame_count][stage_idx]
         
         self.frame_count += 1
 
@@ -134,8 +151,8 @@ class VideoProcessor:
 
         return heatmap.astype(np.uint8)
 
-    def write_text(self, img, text, pos = (30,60), font = cv2.FONT_HERSHEY_DUPLEX, font_color = (0, 255, 0)):
-        cv2.putText(img, text, pos, font, 1, font_color, 1)
+    def write_text(self, img, text, pos = (30, 30), font = cv2.FONT_HERSHEY_DUPLEX, font_color = (255, 255, 255), font_size = 0.8):
+        cv2.putText(img, text, pos, font, font_size, font_color, 2)
 
 def worker_init():
     """Ignore CTRL+C in the worker process."""
@@ -188,21 +205,21 @@ if __name__ == '__main__':
     parser.add_argument(
         '--min_confidence',
         type=float,
-        default=0.3,
+        default=0.4,
         help='Min prediction confidence for bounding boxes'
     )
 
     parser.add_argument(
         '--threshold',
         type=int,
-        default=10,
+        default=15,
         help='Heatmap threshold'
     )
 
     parser.add_argument(
         '--smooth_frames',
         type=int,
-        default=5,
+        default=8,
         help='How many frames to use for smoothing the resulting heatmap'
     )
 

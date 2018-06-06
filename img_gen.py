@@ -31,7 +31,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     all_bboxes = []
 
     i = 1
-    for y_min, y_max, scale, bboxes in windows:
+    for scale, bboxes in windows:
         
         i += 1
         plt.subplot(rows, 2, i)
@@ -40,7 +40,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
         w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < vd.min_confidence, bboxes)))
         box_text = 'Window Search - Scale: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(scale, w_tot, w_pos, w_rej) 
         plt.title(box_text)
-        box_img = draw_windows(img, bboxes, min_confidence = vd.min_confidence)
+        box_img = draw_windows(np.copy(img), bboxes, min_confidence = vd.min_confidence, lines_thick = (2, 3, 2))
         plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
         all_bboxes.extend(bboxes)
         
@@ -48,7 +48,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.title('Original Image')
     plt.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
     
-    box_img = draw_windows(img, all_bboxes, min_confidence = vd.min_confidence)
+    box_img = draw_windows(np.copy(img), all_bboxes, min_confidence = vd.min_confidence, lines_thick = (2, 3, 2))
     plt.subplot(rows, 2, i + 1)
     w_tot = len(all_bboxes)
     w_pos = len(list(filter(lambda bbox:bbox[1] >= vd.min_confidence, all_bboxes)))
@@ -98,7 +98,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.title(heatmap_text)
     plt.imshow(heatmap, cmap = 'hot')
     
-    labeled_img = draw_bboxes(img, bounding_boxes, (0, 255, 150), 2, fill = True)
+    labeled_img = draw_bboxes(np.copy(img), bounding_boxes, (0, 255, 150), 2, fill = True)
     
     plt.subplot(224)
     plt.title('Labeled Image')

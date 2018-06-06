@@ -11,9 +11,10 @@ class WindowSearch:
 
     INTER = (cv2.INTER_AREA, cv2.INTER_LINEAR)
 
-    def __init__(self, model_file, cells_per_step):
-        self._load_model(model_file = model_file)
+    def __init__(self, model_file, cells_per_step, search_layers):
+        self._load_model(model_file)
         self.cells_per_step = cells_per_step  # Instead of overlap, define how many cells to step
+        self.search_layers  = search_layers   # (y_min, y_max, x_min, x_max, scale)
     
     def _load_model(self, model_file):
         
@@ -51,11 +52,8 @@ class WindowSearch:
             hist_features = self.features_extractor.color_hist(window_img)
             features.append(hist_features)
 
-        hog_features = []
-
-        # HOG features
-        for ch_hog_features in layer_hog_features:
-            hog_features.append(ch_hog_features[y_pos:y_pos + blocks_per_window, x_pos:x_pos + blocks_per_window].ravel())
+        # Hog features
+        hog_features = list(map(lambda hog_ch:hog_ch[y_pos:y_pos + blocks_per_window, x_pos:x_pos + blocks_per_window].ravel(), layer_hog_features))
         
         hog_features = np.ravel(hog_features)
 
@@ -64,14 +62,14 @@ class WindowSearch:
         features = np.concatenate(features)
 
         # Scale features
-        features = self.scaler.transform(features.reshape(1, -1))    
+        features = self.scaler.transform(features.reshape(1, -1))
 
         # Computes prediction confidence
         confidence = self.model.decision_function(features)[0]
 
         return confidence
     
-    def _windows_search(self, img, y_min = None, y_max = None, scale = 1.0):
+    def _windows_search(self, img, y_min = None, y_max = None, x_min = None, x_max = None, scale = 1.0):
 
         if y_min is None:
             y_min = 0
@@ -79,8 +77,14 @@ class WindowSearch:
         if y_max is None:
             y_max = img.shape[0]
 
+        if x_min is None:
+            x_min = 0
+        
+        if x_max is None:
+            x_max = img.shape[1]
+
         # Selects the image layer
-        img_layer = img[y_min:y_max, :, :]
+        img_layer = img[y_min:y_max, x_min:x_max, :]
 
         # Scales if necessary
         if scale != 1.0:
@@ -99,11 +103,7 @@ class WindowSearch:
         y_steps = (y_blocks - blocks_per_window) // self.cells_per_step + 1
 
         # Compute individual channel HOG features for the entire image
-        hog_features = []
-
-        for channel in range(img_layer.shape[2]):
-            ch_features = self.features_extractor.extract_hog_features(img_layer[:,:,channel], feature_vec = False)
-            hog_features.append(ch_features)
+        hog_features = list(map(lambda ch:self.features_extractor.extract_hog_features(img_layer[:,:,ch], feature_vec = False), range(img_layer.shape[2])))
             
         windows = []
 
@@ -126,14 +126,14 @@ class WindowSearch:
 
                 window_scale = np.int(self.window * scale)
 
-                top_left = (np.int(window_min_x * scale), np.int(window_min_y * scale) + y_min)
+                top_left = (np.int(window_min_x * scale) + x_min, np.int(window_min_y * scale) + y_min)
                 bottom_right = (top_left[0] + window_scale, top_left[1] + window_scale)
 
                 windows.append(((top_left, bottom_right), confidence))
                 
         return windows
     
-    def windows_search_multiscale(self, img, layers, process_pool = None):
+    def search(self, img, process_pool = None):
         # Color space conversion
         img = self.features_extractor.convert_color_space(img)
 
@@ -141,37 +141,39 @@ class WindowSearch:
 
         # Extract the windows for each layer
         if process_pool is None:
-            for y_min, y_max, scale in layers:
-                layer_windows = self._windows_search(img, y_min = y_min, y_max = y_max, scale = scale)
-                windows.append((y_min, y_max, scale, layer_windows))
-
+            for y_min, y_max, x_min, x_max, scale in self.search_layers:
+                layer_windows = self._windows_search(img, y_min, y_max, x_min, x_max, scale)
+                windows.append((scale, layer_windows))
         else:
-            process_params = [(img, y_min, y_max, scale) for (y_min, y_max, scale) in layers]
+            process_params = [(img, y_min, y_max, x_min, x_max, scale) for (y_min, y_max, x_min, x_max, scale) in self.search_layers]
             process_result = process_pool.starmap(self._windows_search, process_params)
 
-            for (y_min, y_max, scale), layer_windows in zip(layers, process_result):
-                windows.append((y_min, y_max, scale, layer_windows))
+            for (_, _, _, _, scale), layer_windows in zip(self.search_layers, process_result):
+                windows.append((scale, layer_windows))
         
         return windows
 
 class VehicleDetector:
 
-    def __init__(self, model_file = os.path.join('models', 'model.p'), 
+    def __init__(self, model_file     = os.path.join('models', 'model.p'), 
                        cells_per_step = 2,
-                       min_confidence = 0.3, 
-                       heat_threshold = 10,
-                       smooth_frames = 5):
+                       min_confidence = 0.4, 
+                       heat_threshold = 15,
+                       smooth_frames  = 8,
+                       search_layers  = [#(400, 464, 320,  960,  0.8),
+                                         (408, 504, 256,  1024, 1),
+                                         (400, 528, 64,   1216, 1),
+                                         (400, 656, None, None, 1.5),
+                                         (400, 656, None, None, 2)]):
         
-        self.windows_search = WindowSearch(model_file, cells_per_step)
+        self.windows_search = WindowSearch(model_file, cells_per_step, search_layers)
         self.min_confidence = min_confidence
         self.heat_threshold = heat_threshold
+        self.smooth_frames  = smooth_frames
         self.heatmap_buffer = deque(maxlen = smooth_frames)
-        # (y_min, y_max, scale)
-        self.layers = [(400, 496, 0.8),
-                       (400, 528, 1),
-                       (400, 528, 1.5),
-                       (400, 592, 2)]
-        print('Cells per Step: {}, Min Confidence: {}, Heat Threashold: {}, Frame Smoothing: {}'.format(
+        self.frames         = deque(maxlen = smooth_frames)
+        
+        print('Cells per Step: {}, Min Confidence: {}, Heat Threshold: {}, Frame Smoothing: {}'.format(
             cells_per_step,
             min_confidence,
             heat_threshold,
@@ -179,8 +181,8 @@ class VehicleDetector:
         ))
 
     def _heat(self, heatmap, windows, min_confidence):
-        # y_min, y_max, scale, bboxes
-        for _, _, _, bboxes in windows:
+        # scale, bboxes
+        for _, bboxes in windows:
             # bbox, confidence
             for bbox, _ in filter(lambda bbox:bbox[1] >= min_confidence, bboxes):
                 heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1
@@ -214,13 +216,14 @@ class VehicleDetector:
             top_left = (np.min(nonzero_x), np.min(nonzero_y))
             bottom_right = (np.max(nonzero_x), np.max(nonzero_y))
 
+            # if (bottom_right[0] - top_left[0] > self.windows_search.window and bottom_right[1] - top_left[1]):
             bounding_boxes.append((top_left, bottom_right))
-
+            
         return bounding_boxes
     
     def detect_vehicles(self, img, process_pool = None):
         
-        windows = self.windows_search.windows_search_multiscale(img, self.layers, process_pool = process_pool)
+        windows = self.windows_search.search(img, process_pool = process_pool)
         
         # Computes the heatmap
         heatmap = self._heatmap(img, windows, self.min_confidence)
@@ -228,13 +231,26 @@ class VehicleDetector:
         self.heatmap_buffer.append(heatmap)
 
         if len(self.heatmap_buffer) > 1:
+            # Uses the sum over the last x frames
             heatmap = np.sum(self.heatmap_buffer, axis = 0)
 
         # Threshold
         heatmap[heatmap < self.heat_threshold] = 0
-        
+
         # Clipping
         heatmap = np.clip(heatmap, 0, 255)
+
+        # Collects the "good" maps
+        self.frames.append(heatmap)
+
+        #if len(self.frames) > 1:
+            # Takes the average
+        #    heatmap = np.average(self.frames, axis = 0)
+        #if len(self.heatmap_buffer) > 0:
+        #    last_heatmap = self.heatmap_buffer.pop()
+        #    # Removes false positive from the history as well
+        #    last_heatmap[heatmap == 0] = 0
+        #    self.heatmap_buffer.append(last_heatmap)
 
         # Computes the detected cars
         bounding_boxes = self._bounding_boxes(heatmap)
