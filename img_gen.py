@@ -98,7 +98,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     plt.title(heatmap_text)
     plt.imshow(heatmap, cmap = 'hot')
     
-    labeled_img = draw_bboxes(np.copy(img), bounding_boxes, (0, 255, 150), 2, fill = True)
+    labeled_img = draw_bboxes(np.copy(img), bounding_boxes, (250, 150, 55), 2, fill = True)
     
     plt.subplot(224)
     plt.title('Labeled Image')
