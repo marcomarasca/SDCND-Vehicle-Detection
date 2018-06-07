@@ -9,13 +9,17 @@ from multiprocessing import Pool
 from vehicle_detector import VehicleDetector
 from moviepy.video.io.VideoFileClip import VideoFileClip
 from utils import draw_bboxes, draw_windows
+from lane_detector import LaneDetector, ImageProcessor
 
 class VideoProcessor:
 
-    def __init__(self, vehicle_detector, debug = False):
-        self.vehicle_detector = vehicle_detector
-        self.debug = debug
-        self.frame_count = 0
+    def __init__(self, model_file, calibration_file, min_confidence, heat_threshold, smooth_frames, detect_lanes = False, debug = False):
+        self.vehicle_detector = VehicleDetector(model_file, min_confidence, heat_threshold, smooth_frames)
+        self.lane_detector    = LaneDetector(smooth_frames = 5)
+        self.image_processor  = ImageProcessor(calibration_file)
+        self.detect_lanes     = detect_lanes
+        self.debug            = debug
+        self.frame_count      = 0
         self.processed_frames = None
 
     def process_video(self, video_file, file_out, t_start = None, t_end = None, process_pool = None):
@@ -49,6 +53,10 @@ class VideoProcessor:
         
         img = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
+        if self.detect_lanes:
+            # Uses the undistored image
+            img, _, warped_img = self.image_processor.process_image(img)
+
         bboxes, heatmap, windows = self.vehicle_detector.detect_vehicles(img, process_pool = process_pool)
 
         frame_out = np.copy(img) if self.debug else img
@@ -63,7 +71,23 @@ class VideoProcessor:
         
         self.write_text(frame_out, frame_out_text)
         self.write_text(frame_out, 'Detected Cars: {}'.format(len(bboxes)), pos = (30, frame_out.shape[0] - 30), font_color = (0, 250, 150))
+             
+        if self.detect_lanes:
+            _, polyfit, curvature, deviation, fail_code = self.lane_detector.detect_lanes(warped_img)
         
+            fill_color = (0, 255, 0) if fail_code == 0 else (0, 255, 255)
+
+            lane_img = self.lane_detector.draw_lanes(frame_out, polyfit, fill_color = fill_color)
+            lane_img = self.image_processor.unwarp_image(lane_img)
+
+            frame_out = cv2.addWeighted(frame_out, 1.0, lane_img, 1.0, 0)
+
+            curvature_text = 'Left Curvature: {:.1f}, Right Curvature: {:.1f}'.format(curvature[0], curvature[1])
+            offset_text = 'Center Offset: {:.2f} m'.format(deviation)
+
+            self.write_text(frame_out, curvature_text, pos = (30, 60))
+            self.write_text(frame_out, offset_text, pos = (30, 90))
+            
         frame_out = cv2.cvtColor(frame_out, cv2.COLOR_BGR2RGB)
        
         if self.debug:
@@ -220,23 +244,34 @@ if __name__ == '__main__':
         help='How many frames to use for smoothing the resulting heatmap'
     )
 
+    parser.add_argument(
+        '--calibration_file',
+        type=str,
+        default=os.path.join('calibration.p'),
+        help='Calibration data file'
+    )
+
     parser.add_argument('--disable-parallel', dest='parallel', action='store_false', help='Disable parallel processing (may decrease feature extraction speed)')
     parser.set_defaults(parallel=True)
 
     parser.add_argument('--debug', action='store_true', help='Creates mulitple videos for each processing step')
     parser.set_defaults(debug=False)
 
+    parser.add_argument('--lanes-detection', dest='detect_lanes', action='store_true', help='Detect lane lines')
+    parser.set_defaults(detect_lanes=False)
+
     args = parser.parse_args()
 
     if not os.path.isdir(args.output_dir):
         os.makedirs(args.output_dir)
 
-    vehicle_detector = VehicleDetector(model_file     = args.model_file,
-                                       min_confidence = args.min_confidence,
-                                       heat_threshold = args.threshold,
-                                       smooth_frames  = args.smooth_frames)
-
-    video_processor = VideoProcessor(vehicle_detector, args.debug)    
+    video_processor = VideoProcessor(args.model_file,
+                                     args.calibration_file, 
+                                     args.min_confidence,
+                                     args.threshold,
+                                     args.smooth_frames, 
+                                     args.detect_lanes, 
+                                     args.debug)
 
     pool_size = os.cpu_count()
 
