@@ -24,8 +24,8 @@ class FeaturesExtractor:
             color_space: The color space transform to apply to the images (from BGR), if None or 'BGR' no transformation is applied, default 'YCrCb'.
             spatial_size: The size for the spatial features, if None spatial features are not used, default 16.
             hist_bins: The number of color historgram bins to use, if None color features are not used, default 32.
-            orient: The number of orientations for the HOG features, default 11.
-            pix_per_cell: The number of pixels per cell for the HOG features, default 16.
+            orient: The number of orientations for the HOG features, default 16.
+            pix_per_cell: The number of pixels per cell for the HOG features, default 8.
             cell_per_block: The cells per block for the HOG features, default 2.
         """
         self.color_space = color_space

@@ -17,7 +17,7 @@ def draw_bboxes(img, bboxes, color, thick, fill = False):
     
     return img
 
-def draw_windows(img, windows, min_confidence, lines_thick = (1, 3, 2)):
+def draw_windows(img, windows, min_confidence, lines_thick = (1, 2, 1)):
     
     # Filters out according to confidence
     windows_neg = filter(lambda window:window[1] < 0, windows)

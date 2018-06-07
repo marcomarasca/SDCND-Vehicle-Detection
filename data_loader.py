@@ -6,6 +6,10 @@ import json
 from sklearn.externals import joblib
 from glob import glob
 
+"""
+Script used to load and save the data used for training
+"""
+
 def load_dataset(cars_folder = os.path.join('data', 'vehicles'),
                  notcars_folder = os.path.join('data', 'non-vehicles')):
 

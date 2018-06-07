@@ -6,6 +6,12 @@ import argparse
 
 from tqdm import tqdm
 
+"""
+The script used to parse the udacity dataset (https://github.com/udacity/self-driving-car/tree/master/annotations)
+into usable images to train the vehicle vs non-vehicle classifier. Extracts from the tagged images the bounding boxes of 
+the cars, resizes to the correct dimensions and extract patches where vehicles are not present.
+"""
+
 def process_udacity_dataset(map_file = os.path.join('data', 'udacity', 'labels_crowdai.csv'),
                             img_folder = os.path.join('data', 'udacity', 'object-detection-crowdai'),
                             dest_folder = os.path.join('data', 'udacity'),

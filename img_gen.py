@@ -31,14 +31,14 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     all_bboxes = []
 
     i = 1
-    for scale, bboxes in windows:
+    for scale, cells_per_step, bboxes in windows:
         
         i += 1
         plt.subplot(rows, 2, i)
         w_tot = len(bboxes)
         w_pos = len(list(filter(lambda bbox:bbox[1] >= vd.min_confidence, bboxes)))
         w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < vd.min_confidence, bboxes)))
-        box_text = 'Window Search - Scale: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(scale, w_tot, w_pos, w_rej) 
+        box_text = 'Scale: {}, Cells per Step: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(scale, cells_per_step, w_tot, w_pos, w_rej) 
         plt.title(box_text)
         box_img = draw_windows(np.copy(img), bboxes, min_confidence = vd.min_confidence, lines_thick = (2, 3, 2))
         plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
@@ -53,7 +53,7 @@ def process_img(vd, img_file, out_dir = 'output_images', process_pool = None):
     w_tot = len(all_bboxes)
     w_pos = len(list(filter(lambda bbox:bbox[1] >= vd.min_confidence, all_bboxes)))
     w_rej = len(list(filter(lambda bbox:bbox[1] > 0 and bbox[1] < vd.min_confidence, all_bboxes)))
-    box_text = 'Combined Windows - Min Confidence: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(vd.min_confidence, w_tot, w_pos, w_rej) 
+    box_text = 'Combined - Min Confidence: {}, Windows (Total/Positive/Rejected): {}/{}/{}'.format(vd.min_confidence, w_tot, w_pos, w_rej) 
     plt.title(box_text)
     plt.imshow(cv2.cvtColor(box_img, cv2.COLOR_BGR2RGB))
         
@@ -140,13 +140,6 @@ if __name__ == '__main__':
     )
 
     parser.add_argument(
-        '--cells_per_step',
-        type=int,
-        default=2,
-        help='Number of cells per steps'
-    )
-
-    parser.add_argument(
         '--min_confidence',
         type=float,
         default=0.3,
@@ -155,7 +148,7 @@ if __name__ == '__main__':
 
     parser.add_argument(
         '--threshold',
-        type=int,
+        type=float,
         default=5,
         help='Heatmap threshold'
     )
@@ -172,8 +165,7 @@ if __name__ == '__main__':
     for ext in formats:
         imgs.extend(glob.glob(os.path.join(args.dir, '*.' + ext)))
 
-    vd = VehicleDetector(model_file     = args.model_file, 
-                         cells_per_step = args.cells_per_step, 
+    vd = VehicleDetector(model_file     = args.model_file,
                          min_confidence = args.min_confidence, 
                          heat_threshold = args.threshold,
                          smooth_frames  = 0)

@@ -13,6 +13,10 @@ from data_loader import load_dataset, load_config, save_model, load_model
 from sklearn.model_selection import train_test_split
 from multiprocessing import Pool
 
+"""
+Script used to train a LinearSVC on images of cars vs non-cars. 
+"""
+
 def extract_features(cars, notcars, params, process_pool = None):
 
     color_space = params['color_space']
@@ -237,7 +241,7 @@ if __name__ == '__main__':
     parser.add_argument(
         '--orient',
         type=int,
-        default=11,
+        default=16,
         help='Number of HOG orientations'
     )
     parser.add_argument(
