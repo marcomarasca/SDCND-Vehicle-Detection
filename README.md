@@ -118,6 +118,6 @@ Running the script with the --debug flag will produce several videos with the va
 
 ![alt text][windows_search_gif]
 
-The video processing can also detect road lane lines using the flag --lanes_detection, the code comes from the [Advanced Lane Finding](https://github.com/marcomarasca/CarND-Advanced-Lane-Lines) project that I developed previously:
+The video processing can also detect road lane lines using the flag --lanes_detection, the code comes from the [Advanced Lane Finding](https://github.com/marcomarasca/SDCND-Advanced-Lane-Lines) project that I developed previously:
 
 ![alt text][lane_detection_gif]
